@@ -1,0 +1,194 @@
+---
+title: "Influenza A H7N9 in China, 2013"
+format: dashboard
+theme: lux
+---
+
+```{r}
+# Load packages 
+if(!require(pacman)) install.packages("pacman")
+pacman::p_load(tidyverse, outbreaks, bslib, bsicons, shiny, 
+               rgeoboundaries, plotly, htmltools, reactable)
+
+# view data
+#head(outbreaks::fluH7N9_china_2013)
+influenza_china_2013<-outbreaks::fluH7N9_china_2013
+
+# Create dataframe  that will be used
+
+
+total_2013_cases_value<-influenza_china_2013 %>% 
+  count()
+
+
+total_2013_hospitalisations_value<-influenza_china_2013 %>% 
+  filter(!(is.na(date_of_hospitalisation))) %>% 
+  count()
+
+total_2013_death_value<-influenza_china_2013 %>% 
+  filter(outcome=="Death") %>% 
+  count()
+
+
+```
+
+```{r}
+
+influenza_china_2013_per_province<-influenza_china_2013 %>% 
+  group_by(province) %>% 
+  summarise(nb_cases=n()) %>% 
+  arrange(desc(nb_cases)) %>% 
+  mutate(tooltip_label = paste(province, 
+                               nb_cases, 
+                               sep = ": ")) 
+
+
+plot_nb_cases_per_province<-influenza_china_2013_per_province %>% 
+  ggplot(aes(y = reorder(province, nb_cases), 
+             x = nb_cases, 
+            text = tooltip_label)) + 
+  geom_col(fill = "#366db5") +
+  labs(x = "Number of cases",
+       y="") + 
+  theme(legend.position = "none")+
+  theme_minimal()
+
+#plot_nb_cases_per_province
+
+
+cases_per_province_ggplotly <- 
+  ggplotly(plot_nb_cases_per_province, tooltip = "text")
+#cases_per_province_ggplotly
+
+
+
+```
+
+
+```{r results='hide', message=FALSE, warning = FALSE}
+pacman::p_load(outbreaks, rgeoboundaries, plotly)
+
+### MAP OF CASES PER PROVINCE
+province_summary <- fluH7N9_china_2013 %>% 
+  group_by(province) %>% 
+  summarise(total_cases = n()) 
+
+china_map <- rgeoboundaries::gb_adm1("china")
+
+# Check the keys to see if join will be successful
+setdiff(province_summary$province, china_map$shapeName)
+setdiff(china_map$shapeName, province_summary$province)
+# Some work to be done to harmonize these
+
+china_map <- china_map %>%
+  # Remove the strings Province, Municipality and Autonomous Region 
+  # to allow matching
+  mutate(province = str_trim(
+    str_remove(shapeName, "Province|Municipality|Autonomous Region")
+  ))
+
+# Check if join will work fine
+setdiff(province_summary$province, china_map$province)
+
+# Fix Guangdong, which based on a quick Google is actually Guangzhou
+china_map <- china_map %>% 
+  mutate(province = if_else(province == "Guangzhou", "Guangdong", province)) 
+  
+# Check again
+setdiff(province_summary$province, china_map$province)
+
+# Now join
+china_map_joined <- 
+  left_join(china_map, province_summary, by = "province") %>% 
+  # Create tooltip label 
+  mutate(tooltip_label = paste0(province, ": ", total_cases))
+
+china_map_plot <- ggplot(china_map_joined) +
+  geom_sf(aes(fill = total_cases, text = tooltip_label)) + 
+  theme_void() +
+  labs(fill = "Number of Cases") + 
+  theme(legend.position = "none")
+
+china_map_plot_ggplotly <- 
+  ggplotly(china_map_plot, tooltip = "text")
+```
+
+
+
+# HOME 
+
+## Row1 {height=20%}
+
+### col1
+
+```{r}
+value_box(
+  title = "Total Cases",
+  value = total_2013_cases_value,
+  showcase = bsicons::bs_icon("virus"),
+  theme = value_box_theme(bg = "#518fd6")
+)
+```
+
+
+
+### col2
+```{r}
+value_box(
+  title = "Total hospitalizations",
+  value = total_2013_hospitalisations_value,
+  showcase = bsicons::bs_icon("hospital"),
+  theme = value_box_theme(bg = "#214773")
+)
+```
+
+
+### col3
+
+```{r}
+value_box(
+  title = "Total deaths",
+  value = total_2013_death_value,
+  showcase = bsicons::bs_icon("file-medical"),
+  theme = value_box_theme(bg = "#3f71ab")
+)
+
+```
+
+
+
+## Row2 {height=80%}
+
+### {width=30%}
+
+```{r title = "Number of Cases by Province"}
+cases_per_province_ggplotly
+```
+
+
+### {width=70%}
+
+```{r title = "Map of Povinces by number of cases"}
+china_map_plot_ggplotly
+```
+
+
+# DOWNLOAD DATA
+
+The data used in this dashboard is shown below and can be downloaded as a CSV. 
+
+```{r}
+
+htmltools::browsable(
+  tagList(
+    reactable(influenza_china_2013, 
+              elementId = "influenza-table", 
+              searchable = T, 
+              filterable = T), 
+    
+tags$button("Download as CSV", 
+            onclick = "Reactable.downloadDataCSV('influenza-table')")
+  )
+)
+```
+
